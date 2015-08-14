@@ -336,6 +336,12 @@ create_profile_advanced (UfoMultiSearchTaskPrivate *priv, UfoBuffer *image,
     float max_a = 0;
     int displacement = (int) priv->displacement;
     UfoRingCoordinate copy = *center;
+
+
+
+    printf("inner loop %d\touter loop %d\t innerest loop %d\n",2*displacement,2*displacement,max_rad-min_rad);
+     
+
     for (int x = -displacement; x <= displacement; ++x) {
         for (int y = -displacement; y <= displacement; ++y) {
             UfoRingCoordinate urc =
@@ -385,17 +391,61 @@ ufo_multi_search_task_process (UfoTask *task,
                                UfoBuffer *output,
                                UfoRequisition *requisition)
 {
-    (void) requisition;
+
+ //   (void) requisition; //for what??
+
+    //What is URCS ?
+    UfoRequisition req; 
     URCS *src = (URCS *) ufo_buffer_get_host_array(inputs[1], NULL);
-    URCS *dst = (URCS *) ufo_buffer_get_host_array(output, NULL);
-    unsigned nb_elt = (unsigned) src->nb_elt;
-    UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (task);
+   URCS *dst = (URCS *) ufo_buffer_get_host_array(output, NULL);
+    
+    unsigned nb_elt;// = (unsigned) src->nb_elt;
+     UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (task);
 
     unsigned del_count = 0;
+  
+    float* array = ufo_buffer_get_host_array(inputs[1],NULL);
+    
+          
+    ufo_buffer_get_requisition(inputs[1],&req);
+
+    unsigned a = req.dims[0];
+    unsigned b = req.dims[1];
+    printf("X = %d\t Y = %d\n",a,b);
+ 
+    unsigned cnt = 0;
+    unsigned coordinates[a*b];
+    unsigned different_radii = priv->radii_range;
+
+    for(unsigned i = 0; i < a; i++)
+    {
+        for(unsigned j = 0; j < b; j++)
+        {
+             
+           if(array[j + i*b] > 0.0)
+            {
+              
+                //At first just have the coordinates for the center
+                coordinates[cnt] = j + i*b;        
+                cnt++;
+            }
+        }
+    }
+
+    UfoRingCoordinate urc[cnt*priv->radii_range];
+    //Compute a circla and set it to coordinates 
+    for(unsigned i = 0; i < cnt; i++)
+    {
+
+    }
+    
+
+    nb_elt = cnt;
+    printf("CALLING center search %d times\n",nb_elt);
+
     /* Check rings contrast, if it's too low, delete it */
     for (unsigned idx = 0; idx < nb_elt; ++idx) {
-        if (!center_search(priv, inputs[0], &src->coord[idx],
-                           &dst->coord[idx - del_count]))
+        if (!center_search(priv, inputs[0], &src->coord[idx],&dst->coord[idx - del_count]))
             del_count++;
     }
     dst->nb_elt = src->nb_elt - (float) del_count;
@@ -507,7 +557,7 @@ static void
 ufo_multi_search_task_init(UfoMultiSearchTask *self)
 {
     self->priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE(self);
-    self->priv->radii_range = 3;
-    self->priv->threshold = 0.01f;
-    self->priv->displacement = 2;
+    self->priv->radii_range = 10;
+    self->priv->threshold = 0.05f;
+    self->priv->displacement = 10;
 }
