@@ -416,28 +416,44 @@ ufo_multi_search_task_process (UfoTask *task,
     unsigned cnt = 0;
     unsigned coordinates[a*b];
     unsigned different_radii = priv->radii_range;
+    unsigned urc[a*b*(priv->radii_range)*priv->displacement]; //array is with me maximum amount of possibe rings
+    
+    unsigned radius_array[radii_range];
+
 
     for(unsigned i = 0; i < a; i++)
     {
+
+
         for(unsigned j = 0; j < b; j++)
         {
-             
-           if(array[j + i*b] > 0.0)
+            
+            //A candidate was found  
+            if(array[j + i*b] > 0.0)
             {
               
                 //At first just have the coordinates for the center
                 coordinates[cnt] = j + i*b;        
-                cnt++;
+                
+
+                //displacement 
+                for(int x =  -(priv->displacement) < priv->displacement; x++)
+                {
+                  for(int y = -(priv->displacement) < priv->displacement; y++)
+                  {
+                
+
+//            for(//max_Rada --> min _rad --> change raddiii any iteration
+                    radius_array[radius] = 1; //at the moment hack --> later from outside - but how?
+
+                        urc[cnt] = {x+i,y+j,radius_array[radius],0.0f,0.0f};
+                        cnt++;
+
+                }
             }
         }
     }
 
-    UfoRingCoordinate urc[cnt*priv->radii_range];
-    //Compute a circla and set it to coordinates 
-    for(unsigned i = 0; i < cnt; i++)
-    {
-
-    }
     
 
     nb_elt = cnt;
