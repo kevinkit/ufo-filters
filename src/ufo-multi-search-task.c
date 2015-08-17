@@ -25,78 +25,113 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
+
+#ifdef __APPLE__
+#include <OpenCL/cl.h>
+#else
+#include <CL/cl.h>
+#endif
+
+
+
+
+
+
+
+
+
+
+
 #include "ufo-multi-search-task.h"
 #include "ufo-ring-coordinates.h"
 
 
 struct _UfoMultiSearchTaskPrivate {
     /* number of elements desired in computations of polynomial */
+
+    cl_kernel found_cand;
+    cl_context context;
+
     unsigned radii_range;
     float threshold;
     unsigned displacement;
+
+
+
 };
 
 static void ufo_task_interface_init (UfoTaskIface *iface);
 
 G_DEFINE_TYPE_WITH_CODE (UfoMultiSearchTask, ufo_multi_search_task, UFO_TYPE_TASK_NODE,
-                         G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
-                                                ufo_task_interface_init))
+        G_IMPLEMENT_INTERFACE (UFO_TYPE_TASK,
+            ufo_task_interface_init))
 
 #define UFO_MULTI_SEARCH_TASK_GET_PRIVATE(obj) (G_TYPE_INSTANCE_GET_PRIVATE((obj), UFO_TYPE_MULTI_SEARCH_TASK, UfoMultiSearchTaskPrivate))
 
-enum {
-    PROP_0,
-    PROP_RADII_RANGE,
-    PROP_THRESHOLD,
-    PROP_DISPLACEMENT,
-    N_PROPERTIES
-};
+    enum {
+        PROP_0,
+        PROP_RADII_RANGE,
+        PROP_THRESHOLD,
+        PROP_DISPLACEMENT,
+        N_PROPERTIES
+    };
 
 static GParamSpec *properties[N_PROPERTIES] = { NULL, };
 
-UfoNode *
+    UfoNode *
 ufo_multi_search_task_new (void)
 {
     return UFO_NODE (g_object_new (UFO_TYPE_MULTI_SEARCH_TASK, NULL));
 }
 
-static void
+    static void
 ufo_multi_search_task_setup (UfoTask *task,
-                             UfoResources *resources,
-                             GError **error)
+        UfoResources *resources,
+        GError **error)
 {
+    UfoMultiSearchTaskPrivate *priv;
+    priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE(task);
+
+    priv->found_cand = ufo_resources_get_kernel(resources, "found_cand.cl", NULL, error);
+    priv->context = ufo_resources_get_context(resources); 
+    if(priv->found_cand)
+    {
+        UFO_RESOURCES_CHECK_CLERR(clRetainKernel(priv->found_cand));
+    }
+
 }
 
-static void
+    static void
 ufo_multi_search_task_get_requisition (UfoTask *task,
-                                       UfoBuffer **inputs,
-                                       UfoRequisition *requisition)
+        UfoBuffer **inputs,
+        UfoRequisition *requisition)
 {
     /* input[0] : contrasted image */
     /* input[1] : coordinate list */
     ufo_buffer_get_requisition (inputs[1], requisition);
 }
 
-static guint
+    static guint
 ufo_multi_search_task_get_num_inputs (UfoTask *task)
 {
     return 2;
 }
 
-static guint
+    static guint
 ufo_multi_search_task_get_num_dimensions (UfoTask *task,
-                                          guint input)
+        guint input)
 {
     return 1;
 }
 
-static UfoTaskMode
+    static UfoTaskMode
 ufo_multi_search_task_get_mode (UfoTask *task)
 {
-    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_CPU;
+    return UFO_TASK_MODE_PROCESSOR | UFO_TASK_MODE_GPU;
 }
 
-static int
+    static int
 min (int l, int r)
 {
     if (l > r)
@@ -105,7 +140,7 @@ min (int l, int r)
     return l;
 }
 
-static int
+    static int
 max (int l, int r)
 {
     if (l > r)
@@ -113,9 +148,9 @@ max (int l, int r)
     return r;
 }
 
-static void
+    static void
 get_coords(int *left, int *right, int *top, int *bot, int rad,
-           UfoRequisition *req, UfoRingCoordinate *center)
+        UfoRequisition *req, UfoRingCoordinate *center)
 {
     int l = (int) roundf (center->x - (float) rad);
     int r = (int) roundf (center->x + (float) rad);
@@ -131,7 +166,7 @@ get_coords(int *left, int *right, int *top, int *bot, int rad,
 }
 
 /* Sum each pixel of ring from center with a radius of r */
-static float
+    static float
 compute_intensity (UfoBuffer *ufo_image, UfoRingCoordinate *center, int r)
 {
     float intensity = 0;
@@ -162,23 +197,23 @@ compute_intensity (UfoBuffer *ufo_image, UfoRingCoordinate *center, int r)
  *  |
  *  X_i^order ..... X^0
  */
-static float *
+    static float *
 vandermonde_new (unsigned x, unsigned nb_elt, unsigned order)
 {
     float *vandermonde = malloc (sizeof (float) * nb_elt * (order + 1));
     for (unsigned j = 0; j <= order; ++j) {
         for (unsigned i = 0; i < nb_elt; ++i) {
             vandermonde[i * (order + 1) + j] = powf ((float) (x + i),
-                                                     (float) (order - j));
+                    (float) (order - j));
         }
     }
     return vandermonde;
 }
 
 /* Computes the projectios of vector A(:, j) over e */
-static void
+    static void
 compute_projection (float *e, float *A, unsigned j, unsigned row,
-                    unsigned column, float *dst)
+        unsigned column, float *dst)
 {
     float sc1 = 0;
     float sc2 = 0;
@@ -194,7 +229,7 @@ compute_projection (float *e, float *A, unsigned j, unsigned row,
     }
 }
 
-static float *
+    static float *
 Gram_Schmidt_U(float *A, unsigned row, unsigned column)
 {
     float *U = malloc (sizeof (float) * row * column);
@@ -239,7 +274,7 @@ Gram_Schmidt_U(float *A, unsigned row, unsigned column)
     return U;
 }
 
-static float *
+    static float *
 Gram_Schmidt_Q (float *A, unsigned row, unsigned column)
 {
     float *Q = malloc (sizeof (float) * row * column);
@@ -259,9 +294,9 @@ Gram_Schmidt_Q (float *A, unsigned row, unsigned column)
 }
 /* Transpose first matrix, and multiply to second matrix */
 /* column_Q is the number of column in Q befor being transposed */
-static float *
+    static float *
 matrix_transpose_mul2(float *Q, float *A, unsigned column_Q,
-                            unsigned row, unsigned column_A)
+        unsigned row, unsigned column_A)
 {
     float *res = calloc (1, sizeof (float) * column_Q * column_A);
     for (unsigned i = 0; i < column_Q; ++i) {
@@ -275,7 +310,7 @@ matrix_transpose_mul2(float *Q, float *A, unsigned column_Q,
 }
 
 /* Transpose first matrix, and multiply to second matrix */
-static float *
+    static float *
 matrix_transpose_mul(float *Q, float *A, unsigned row, unsigned column)
 {
     float *res = calloc (1, sizeof (float) * column * column);
@@ -292,9 +327,9 @@ matrix_transpose_mul(float *Q, float *A, unsigned row, unsigned column)
 /* P(r_min + 1) = values[1] */
 /* P(r_min + nb_elt - 1) = values[nb_elt - 1] */
 /* The step is always of 1 */
-static void
+    static void
 polyfit (float *values, unsigned nb_elt, unsigned r_min,
-         float *a, float *b, float *c)
+        float *a, float *b, float *c)
 {
     /* We have as many column as the order + 1 of the polynomial */
     unsigned column = 3;
@@ -320,9 +355,9 @@ polyfit (float *values, unsigned nb_elt, unsigned r_min,
 /* From a given image, vary the radius size and compare the variation of the
  * intensity for each radii.  From these intensities compute a polynomial P(r)
  * where r represents a radius */
-static void
+    static void
 create_profile_advanced (UfoMultiSearchTaskPrivate *priv, UfoBuffer *image,
-                         UfoRingCoordinate *center, float *a, float *b, float *c)
+        UfoRingCoordinate *center, float *a, float *b, float *c)
 {
     unsigned min_rad = 1;
     if (center->r > priv->radii_range)
@@ -339,9 +374,16 @@ create_profile_advanced (UfoMultiSearchTaskPrivate *priv, UfoBuffer *image,
 
 
 
-    printf("inner loop %d\touter loop %d\t innerest loop %d\n",2*displacement,2*displacement,max_rad-min_rad);
-     
 
+
+
+
+
+
+
+
+
+    //MULTITHREADING WILL START HERE --> PUT THESE LOOPS INSIDE OF THREADS
     for (int x = -displacement; x <= displacement; ++x) {
         for (int y = -displacement; y <= displacement; ++y) {
             UfoRingCoordinate urc =
@@ -362,12 +404,11 @@ create_profile_advanced (UfoMultiSearchTaskPrivate *priv, UfoBuffer *image,
             }
         }
     }
-    *a = max_a;
 }
 
-static char
+    static char
 center_search (UfoMultiSearchTaskPrivate *priv, UfoBuffer *image,
-               UfoRingCoordinate *src, UfoRingCoordinate *dst)
+        UfoRingCoordinate *src, UfoRingCoordinate *dst)
 {
     float a, b, c;
     /* Compute polynomial aX^2 + bX + c */
@@ -385,94 +426,176 @@ center_search (UfoMultiSearchTaskPrivate *priv, UfoBuffer *image,
     return 0;
 }
 
-static gboolean
+    static gboolean
 ufo_multi_search_task_process (UfoTask *task,
-                               UfoBuffer **inputs,
-                               UfoBuffer *output,
-                               UfoRequisition *requisition)
+        UfoBuffer **inputs,
+        UfoBuffer *output,
+        UfoRequisition *requisition)
 {
 
- //   (void) requisition; //for what??
 
-    //What is URCS ?
-    UfoRequisition req; 
-    URCS *src = (URCS *) ufo_buffer_get_host_array(inputs[1], NULL);
-   URCS *dst = (URCS *) ufo_buffer_get_host_array(output, NULL);
-    
-    unsigned nb_elt;// = (unsigned) src->nb_elt;
-     UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (task);
 
-    unsigned del_count = 0;
-  
-    float* array = ufo_buffer_get_host_array(inputs[1],NULL);
-    
-          
+    //GPU SETUP
+    UfoGpuNode *node;
+    UfoProfiler *profiler;
+    cl_command_queue cmd_queue;
+
+    cl_mem in_mem_gpu;
+    cl_mem values_cand;
+    cl_mem coord;
+    cl_mem counter;
+
+    cl_int error;
+
+    node = UFO_GPU_NODE (ufo_task_node_get_proc_node (UFO_TASK_NODE (task)));
+    cmd_queue = ufo_gpu_node_get_cmd_queue (node);
+
+    profiler = ufo_task_node_get_profiler (UFO_TASK_NODE (task));
+
+
+    UfoRequisition req;
+
+
     ufo_buffer_get_requisition(inputs[1],&req);
 
     unsigned a = req.dims[0];
     unsigned b = req.dims[1];
+    size_t mem_size_c = (size_t) (a*b);
+
+
+    UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (task);
+
+    //is filled before
+    in_mem_gpu = ufo_buffer_get_device_array(inputs[1], cmd_queue);
+
+    guint counter_cpu[1];
+
+    counter_cpu[0] = 0;
+
+    //Will all be filled by the kernel
+    values_cand = clCreateBuffer(priv->context, CL_MEM_READ_WRITE, sizeof(gfloat) *mem_size_c , NULL, &error);
+    UFO_RESOURCES_CHECK_CLERR(error);
+    coord = clCreateBuffer(priv->context, CL_MEM_READ_WRITE,sizeof(gfloat) * mem_size_c ,NULL,&error);
+    UFO_RESOURCES_CHECK_CLERR(error);
+
+    counter = clCreateBuffer(priv->context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,sizeof(guint), counter_cpu, &error);
+
+    UFO_RESOURCES_CHECK_CLERR(error);
+
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,0,sizeof(cl_mem),&in_mem_gpu));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,1,sizeof(cl_mem),&values_cand));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,2,sizeof(cl_mem),&coord));
+    UFO_RESOURCES_CHECK_CLERR(clSetKernelArg(priv->found_cand,3,sizeof(cl_mem),&counter));
+
+
+
+    //What is URCS ?
+    //    URCS *src = (URCS *) ufo_buffer_get_host_array(inputs[1], NULL);
+    //    URCS *dst = (URCS *) ufo_buffer_get_host_array(output, NULL);
+
+
+
+    unsigned nb_elt;// = (unsigned) src->nb_elt;
+
+    unsigned del_count = 0;
+
+
+
+
+
+    float* array = ufo_buffer_get_host_array(inputs[1],NULL);
+    //    float* img = ufo_buffer_get_device_array(inputs[1],NULL);
+
+
+    ufo_profiler_call(profiler,cmd_queue,priv->found_cand,1,&mem_size_c,NULL);
+
+    clEnqueueReadBuffer(cmd_queue,counter,CL_TRUE,0,sizeof(guint),counter_cpu,0,NULL,NULL);
+
+    float* coordinates_cpu = (float*) malloc(sizeof(float) * (counter_cpu[0] +1));
+
+    clEnqueueReadBuffer(cmd_queue,coord,CL_TRUE,0,sizeof(cl_float)*counter_cpu[0],coordinates_cpu,0,NULL,NULL);
+
+    printf("FOUND ON GPU %d, threads executed :%d \n\n",counter_cpu[0],mem_size_c);
+
+
+    UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(values_cand));
+    UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(coord));
+    UFO_RESOURCES_CHECK_CLERR(clReleaseMemObject(counter));
+
     printf("X = %d\t Y = %d\n",a,b);
- 
+
     unsigned cnt = 0;
     unsigned coordinates[a*b];
-    unsigned different_radii = priv->radii_range;
-    unsigned urc[a*b*(priv->radii_range)*priv->displacement]; //array is with me maximum amount of possibe rings
+    printf("MAXIMUM AMOUNT = %di\n\n", a*b*(priv->radii_range)*priv->displacement);
+    UfoRingCoordinate urc[1000*2*(priv->radii_range)*2*priv->displacement]; //array is with me maximum amount of possibe rings
+    unsigned radius_array[priv->radii_range];
+
+
+
+    unsigned displacement_array[9];    
+
+    int dot_counter = 0;
+
+    float values[2*priv->radii_range];   
+    unsigned tmp = 0;
+
+
     
-    unsigned radius_array[radii_range];
 
 
-    for(unsigned i = 0; i < a; i++)
-    {
-
-
-        for(unsigned j = 0; j < b; j++)
-        {
-            
-            //A candidate was found  
-            if(array[j + i*b] > 0.0)
-            {
-              
-                //At first just have the coordinates for the center
-                coordinates[cnt] = j + i*b;        
-                
 
                 //displacement 
-                for(int x =  -(priv->displacement) < priv->displacement; x++)
+                //is the displacement ONLY for the found dots ? --> why not use the found dots?
+
+                for(unsigned r = 0; r < 2*priv->radii_range; r++)
                 {
-                  for(int y = -(priv->displacement) < priv->displacement; y++)
-                  {
-                
+                    urc[cnt].x = i;
+                    urc[cnt].y = j;
+                    urc[cnt].r = r;
+                    urc[cnt].contrast = 0.0f;
+                    urc[cnt].intensity = 0.0f;
 
-//            for(//max_Rada --> min _rad --> change raddiii any iteration
-                    radius_array[radius] = 1; //at the moment hack --> later from outside - but how?
+                    //Compute intensity
+                    values[r] = compute_intensity(inputs[0],&urc[cnt], (int) r + priv->radii_range);
+                    //WHY ? 
+                    if(values[r] > values[tmp])
+                    { 
+                        tmp = r;
+                    }
 
-                        urc[cnt] = {x+i,y+j,radius_array[radius],0.0f,0.0f};
-                        cnt++;
-
+                    cnt++;
                 }
-            }
-        }
-    }
 
-    
+
+    free(coordinates_cpu);
+
+
+
+
+
+
+
 
     nb_elt = cnt;
     printf("CALLING center search %d times\n",nb_elt);
-
     /* Check rings contrast, if it's too low, delete it */
-    for (unsigned idx = 0; idx < nb_elt; ++idx) {
-        if (!center_search(priv, inputs[0], &src->coord[idx],&dst->coord[idx - del_count]))
-            del_count++;
-    }
-    dst->nb_elt = src->nb_elt - (float) del_count;
+
+    /*
+       for (unsigned idx = 0; idx < nb_elt; ++idx) {
+       if (!center_search(priv, inputs[0], &src->coord[idx],&dst->coord[idx - del_count]))
+       del_count++;
+       }
+       dst->nb_elt = src->nb_elt - (float) del_count;
+
+     */
     return TRUE;
 }
 
-static void
+    static void
 ufo_multi_search_task_set_property (GObject *object,
-                                    guint property_id,
-                                    const GValue *value,
-                                    GParamSpec *pspec)
+        guint property_id,
+        const GValue *value,
+        GParamSpec *pspec)
 {
     UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (object);
 
@@ -492,11 +615,11 @@ ufo_multi_search_task_set_property (GObject *object,
     }
 }
 
-static void
+    static void
 ufo_multi_search_task_get_property (GObject *object,
-                                    guint property_id,
-                                    GValue *value,
-                                    GParamSpec *pspec)
+        guint property_id,
+        GValue *value,
+        GParamSpec *pspec)
 {
     UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (object);
 
@@ -516,13 +639,24 @@ ufo_multi_search_task_get_property (GObject *object,
     }
 }
 
-static void
+    static void
 ufo_multi_search_task_finalize (GObject *object)
 {
+
+
+    UfoMultiSearchTaskPrivate *priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE (object);
+
+    if(priv->found_cand)
+    {
+        UFO_RESOURCES_CHECK_CLERR(clReleaseKernel(priv->found_cand));
+    }
+
     G_OBJECT_CLASS (ufo_multi_search_task_parent_class)->finalize (object);
+
 }
 
-static void
+
+    static void
 ufo_task_interface_init (UfoTaskIface *iface)
 {
     iface->setup = ufo_multi_search_task_setup;
@@ -533,7 +667,7 @@ ufo_task_interface_init (UfoTaskIface *iface)
     iface->process = ufo_multi_search_task_process;
 }
 
-static void
+    static void
 ufo_multi_search_task_class_init (UfoMultiSearchTaskClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
@@ -544,24 +678,24 @@ ufo_multi_search_task_class_init (UfoMultiSearchTaskClass *klass)
 
     properties[PROP_RADII_RANGE] =
         g_param_spec_uint ("radii_range",
-                          "Gives the radius scanning range",
-                          "Gives the radius scanning range",
-                          0, G_MAXUINT, 3,
-                          G_PARAM_READWRITE);
+                "Gives the radius scanning range",
+                "Gives the radius scanning range",
+                0, G_MAXUINT, 3,
+                G_PARAM_READWRITE);
 
     properties[PROP_THRESHOLD] =
         g_param_spec_float ("threshold",
-                            "Give minimum contrast a ring should have",
-                            "Give minimum contrast a ring should have",
-                            0, G_MAXFLOAT, 0.01f,
-                            G_PARAM_READWRITE);
+                "Give minimum contrast a ring should have",
+                "Give minimum contrast a ring should have",
+                0, G_MAXFLOAT, 0.01f,
+                G_PARAM_READWRITE);
 
     properties[PROP_DISPLACEMENT] =
         g_param_spec_uint ("displacement",
-                            "How much rings center can be displaced",
-                            "How much rings center can be displaced",
-                            0, G_MAXUINT, 2,
-                            G_PARAM_READWRITE);
+                "How much rings center can be displaced",
+                "How much rings center can be displaced",
+                0, G_MAXUINT, 2,
+                G_PARAM_READWRITE);
 
     for (guint i = PROP_0 + 1; i < N_PROPERTIES; i++)
         g_object_class_install_property (gobject_class, i, properties[i]);
@@ -569,11 +703,11 @@ ufo_multi_search_task_class_init (UfoMultiSearchTaskClass *klass)
     g_type_class_add_private (gobject_class, sizeof(UfoMultiSearchTaskPrivate));
 }
 
-static void
+    static void
 ufo_multi_search_task_init(UfoMultiSearchTask *self)
 {
     self->priv = UFO_MULTI_SEARCH_TASK_GET_PRIVATE(self);
     self->priv->radii_range = 10;
     self->priv->threshold = 0.05f;
-    self->priv->displacement = 10;
+    self->priv->displacement = 5;
 }
